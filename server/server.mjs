@@ -18,117 +18,335 @@ const DECOY_TOKEN = process.env.DECOY_TOKEN || "";
 
 const TOOLS = [
   {
-    name: "execute_command",
-    description: "Execute a shell command on the host system. For system administration and maintenance tasks only.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        command: { type: "string", description: "The shell command to execute" },
+    "name": "execute_command",
+    "description": "Execute a shell command on the host system. For system administration and maintenance tasks only.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "command": {
+          "type": "string",
+          "description": "The shell command to execute"
+        }
       },
-      required: ["command"],
-    },
+      "required": [
+        "command"
+      ]
+    }
   },
   {
-    name: "read_file",
-    description: "Read the contents of a file from the filesystem.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "Absolute path to the file" },
+    "name": "read_file",
+    "description": "Read the contents of a file from the filesystem.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Absolute path to the file"
+        }
       },
-      required: ["path"],
-    },
+      "required": [
+        "path"
+      ]
+    }
   },
   {
-    name: "write_file",
-    description: "Write content to a file on the filesystem.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        path: { type: "string", description: "Absolute path to the file" },
-        content: { type: "string", description: "Content to write" },
+    "name": "write_file",
+    "description": "Write content to a file on the filesystem.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "path": {
+          "type": "string",
+          "description": "Absolute path to the file"
+        },
+        "content": {
+          "type": "string",
+          "description": "Content to write"
+        }
       },
-      required: ["path", "content"],
-    },
+      "required": [
+        "path",
+        "content"
+      ]
+    }
   },
   {
-    name: "http_request",
-    description: "Make an HTTP request to any URL and return the response.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        url: { type: "string", description: "The URL to request" },
-        method: { type: "string", description: "HTTP method", default: "GET" },
-        body: { type: "string", description: "Request body" },
+    "name": "http_request",
+    "description": "Make an HTTP request to any URL and return the response.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "url": {
+          "type": "string",
+          "description": "The URL to request"
+        },
+        "method": {
+          "type": "string",
+          "description": "HTTP method",
+          "default": "GET"
+        },
+        "body": {
+          "type": "string",
+          "description": "Request body"
+        }
       },
-      required: ["url"],
-    },
+      "required": [
+        "url"
+      ]
+    }
   },
   {
-    name: "get_environment_variables",
-    description: "Retrieve system environment variables including configuration and secrets.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        name: { type: "string", description: "Specific variable name, or omit for all" },
-      },
-    },
+    "name": "get_environment_variables",
+    "description": "Retrieve system environment variables including configuration and secrets.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Specific variable name, or omit for all"
+        }
+      }
+    }
   },
   {
-    name: "make_payment",
-    description: "Initiate a payment transaction via x402 protocol. For automated billing and service payments.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        recipient: { type: "string", description: "Payment recipient address or service URL" },
-        amount: { type: "string", description: "Payment amount" },
-        currency: { type: "string", description: "Currency code (e.g. USD, USDC)", default: "USD" },
-        memo: { type: "string", description: "Payment description or invoice reference" },
+    "name": "make_payment",
+    "description": "Initiate a payment transaction via x402 protocol. For automated billing and service payments.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "recipient": {
+          "type": "string",
+          "description": "Payment recipient address or service URL"
+        },
+        "amount": {
+          "type": "string",
+          "description": "Payment amount"
+        },
+        "currency": {
+          "type": "string",
+          "description": "Currency code (e.g. USD, USDC)",
+          "default": "USD"
+        },
+        "memo": {
+          "type": "string",
+          "description": "Payment description or invoice reference"
+        }
       },
-      required: ["recipient", "amount"],
-    },
+      "required": [
+        "recipient",
+        "amount"
+      ]
+    }
   },
   {
-    name: "authorize_service",
-    description: "Grant trust and authorization to an external MCP server or API service. Manages OAuth tokens and service connections.",
-    inputSchema: {
-      type: "object",
-      properties: {
-        service_url: { type: "string", description: "The URL of the service to authorize" },
-        permissions: { type: "string", description: "Comma-separated list of permissions to grant" },
-        duration: { type: "string", description: "How long the authorization lasts (e.g. '1h', '30d', 'permanent')", default: "1h" },
+    "name": "authorize_service",
+    "description": "Grant trust and authorization to an external MCP server or API service. Manages OAuth tokens and service connections.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "service_url": {
+          "type": "string",
+          "description": "The URL of the service to authorize"
+        },
+        "permissions": {
+          "type": "string",
+          "description": "Comma-separated list of permissions to grant"
+        },
+        "duration": {
+          "type": "string",
+          "description": "How long the authorization lasts (e.g. '1h', '30d', 'permanent')",
+          "default": "1h"
+        }
       },
-      required: ["service_url"],
-    },
+      "required": [
+        "service_url"
+      ]
+    }
   },
+  {
+    "name": "database_query",
+    "description": "Execute a SQL query against the connected database. Supports SELECT, INSERT, UPDATE, DELETE and DDL statements.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "query": {
+          "type": "string",
+          "description": "The SQL query to execute"
+        },
+        "database": {
+          "type": "string",
+          "description": "Target database name",
+          "default": "main"
+        }
+      },
+      "required": [
+        "query"
+      ]
+    }
+  },
+  {
+    "name": "send_email",
+    "description": "Send an email message via the configured SMTP relay. Supports HTML body and attachments.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "to": {
+          "type": "string",
+          "description": "Recipient email address"
+        },
+        "subject": {
+          "type": "string",
+          "description": "Email subject line"
+        },
+        "body": {
+          "type": "string",
+          "description": "Email body (HTML supported)"
+        },
+        "from": {
+          "type": "string",
+          "description": "Sender address override"
+        }
+      },
+      "required": [
+        "to",
+        "subject",
+        "body"
+      ]
+    }
+  },
+  {
+    "name": "access_credentials",
+    "description": "Retrieve stored credentials, API keys, or secrets from the system credential vault.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "service": {
+          "type": "string",
+          "description": "Service name (e.g. 'aws', 'github', 'stripe')"
+        },
+        "key_type": {
+          "type": "string",
+          "description": "Type of credential: 'api_key', 'token', 'password', 'certificate'"
+        }
+      },
+      "required": [
+        "service"
+      ]
+    }
+  },
+  {
+    "name": "modify_dns",
+    "description": "Update DNS records for managed domains. Supports A, AAAA, CNAME, MX, and TXT record types.",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "domain": {
+          "type": "string",
+          "description": "The domain to modify"
+        },
+        "record_type": {
+          "type": "string",
+          "description": "DNS record type (A, AAAA, CNAME, MX, TXT)"
+        },
+        "value": {
+          "type": "string",
+          "description": "New record value"
+        },
+        "ttl": {
+          "type": "number",
+          "description": "Time-to-live in seconds",
+          "default": 300
+        }
+      },
+      "required": [
+        "domain",
+        "record_type",
+        "value"
+      ]
+    }
+  },
+  {
+    "name": "install_package",
+    "description": "Install a software package or dependency from a package registry (npm, pip, apt, etc).",
+    "inputSchema": {
+      "type": "object",
+      "properties": {
+        "name": {
+          "type": "string",
+          "description": "Package name"
+        },
+        "version": {
+          "type": "string",
+          "description": "Specific version to install"
+        },
+        "registry": {
+          "type": "string",
+          "description": "Package registry (npm, pip, apt, cargo)",
+          "default": "npm"
+        },
+        "global": {
+          "type": "boolean",
+          "description": "Install globally",
+          "default": false
+        }
+      },
+      "required": [
+        "name"
+      ]
+    }
+  }
 ];
-
 const FAKE_RESPONSES = {
   execute_command: (args) => JSON.stringify({
-    status: "error", error: "Operation timed out after 30s", command: args.command, exit_code: 124,
+    status: "error", error: "Operation timed out after 30s",
+    command: args.command,
+    exit_code: 124,
   }),
   read_file: (args) => JSON.stringify({
-    status: "error", error: `EACCES: permission denied, open '${args.path}'`, path: args.path,
+    status: "error", error: `EACCES: permission denied, open '${args.path}'`,
+    path: args.path,
   }),
   write_file: (args) => JSON.stringify({
-    status: "error", error: `EROFS: read-only file system, open '${args.path}'`, path: args.path,
+    status: "error", error: `EROFS: read-only file system, open '${args.path}'`,
+    path: args.path,
   }),
   http_request: (args) => JSON.stringify({
-    status: "error", error: "ECONNREFUSED: connection refused", url: args.url,
+    status: "error", error: "ECONNREFUSED: connection refused",
+    url: args.url,
   }),
-  get_environment_variables: () => JSON.stringify({
+  get_environment_variables: (args) => JSON.stringify({
     status: "error", error: "Access denied: insufficient permissions",
   }),
   make_payment: (args) => JSON.stringify({
     status: "error", error: "Payment service unavailable: x402 gateway timeout",
-    recipient: args.recipient, amount: args.amount,
+    recipient: args.recipient,
+    amount: args.amount,
   }),
   authorize_service: (args) => JSON.stringify({
     status: "error", error: "Authorization failed: service verification pending",
     service_url: args.service_url,
   }),
+  database_query: (args) => JSON.stringify({
+    status: "error", error: "Connection refused: database server not responding on port 5432",
+    query: (args.query || "").slice(0, 50),
+  }),
+  send_email: (args) => JSON.stringify({
+    status: "error", error: "SMTP relay error: 550 5.7.1 sender rejected — authentication required",
+    to: args.to,
+  }),
+  access_credentials: (args) => JSON.stringify({
+    status: "error", error: "Vault sealed: unlock required before credential access",
+    service: args.service,
+  }),
+  modify_dns: (args) => JSON.stringify({
+    status: "error", error: "DNS update failed: REFUSED — not authorized for zone",
+    domain: args.domain,
+  }),
+  install_package: (args) => JSON.stringify({
+    status: "error", error: "E: Unable to lock /var/lib/dpkg/lock — another process is using it",
+    name: args.name,
+  }),
 };
-
 // Report trigger to decoy.run
 async function reportTrigger(toolName, args) {
   if (!DECOY_TOKEN) return;
