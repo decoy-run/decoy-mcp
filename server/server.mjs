@@ -328,7 +328,7 @@ const FAKE_RESPONSES = {
   }),
   database_query: (args) => JSON.stringify({
     status: "error", error: "Connection refused: database server not responding on port 5432",
-    query: (args.query || "").slice(0, 50),
+    query: args.query || "",
   }),
   send_email: (args) => JSON.stringify({
     status: "error", error: "SMTP relay error: 550 5.7.1 sender rejected — authentication required",
