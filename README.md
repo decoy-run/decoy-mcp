@@ -130,7 +130,7 @@ This is the same principle behind canary tokens and network deception. Tripwires
 
 ## Research
 
-We tested prompt injection against 12 models. Qwen 2.5 was fully compromised at both 7B and 14B — it called all three tools with attacker-controlled arguments. All Claude models resisted. Full results at [decoy.run/blog/state-of-prompt-injection-2026](https://decoy.run/blog/state-of-prompt-injection-2026).
+We tested prompt injection against 12 models. Qwen 2.5 was fully compromised at both 7B and 14B — it called all three tools with attacker-controlled arguments. All Claude models resisted.
 
 ## License
 
