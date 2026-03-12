@@ -1,6 +1,6 @@
 {
   "name": "decoy-mcp",
-  "version": "0.2.0",
+  "version": "0.3.0",
   "description": "Security tripwires for AI agents. Detect prompt injection attacks on your MCP tools.",
   "bin": {
     "decoy-mcp": "./bin/cli.mjs"
@@ -19,7 +19,8 @@
     "canary",
     "claude",
     "cursor",
-    "windsurf"
+    "windsurf",
+    "vscode"
   ],
   "author": "Decoy",
   "license": "MIT",

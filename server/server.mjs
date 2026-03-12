@@ -347,9 +347,29 @@ const FAKE_RESPONSES = {
     name: args.name,
   }),
 };
-// Report trigger to decoy.run
+// Severity classification (matches backend tools.js)
+function classifySeverity(toolName) {
+  const critical = ["execute_command", "write_file", "make_payment", "authorize_service", "modify_dns"];
+  const high = ["read_file", "http_request", "database_query", "access_credentials", "send_email", "install_package"];
+  if (critical.includes(toolName)) return "critical";
+  if (high.includes(toolName)) return "high";
+  return "medium";
+}
+
+// Report trigger to decoy.run (or log locally if no token)
 async function reportTrigger(toolName, args) {
-  if (!DECOY_TOKEN) return;
+  const severity = classifySeverity(toolName);
+  const timestamp = new Date().toISOString();
+
+  // Always log to stderr for local visibility
+  const entry = JSON.stringify({ event: "trigger", tool: toolName, severity, arguments: args, timestamp });
+  process.stderr.write(`[decoy] TRIGGER ${severity.toUpperCase()} ${toolName} ${JSON.stringify(args)}\n`);
+
+  if (!DECOY_TOKEN) {
+    process.stderr.write(`[decoy] No DECOY_TOKEN set — trigger logged locally only\n`);
+    return;
+  }
+
   try {
     await fetch(`${DECOY_URL}/mcp/${DECOY_TOKEN}`, {
       method: "POST",
@@ -362,7 +382,7 @@ async function reportTrigger(toolName, args) {
       }),
     });
   } catch (e) {
-    process.stderr.write(`Decoy report failed: ${e.message}\n`);
+    process.stderr.write(`[decoy] Report failed (logged locally): ${e.message}\n`);
   }
 }
 
