@@ -1,8 +1,8 @@
 # Decoy
 
-Security tripwires for AI agents. Detect prompt injection before it causes damage.
+Security tripwires for AI agents. Detect prompt injection in real time.
 
-Decoy is a fake MCP server that advertises tools an AI agent should never call — `execute_command`, `read_file`, `make_payment`, and more. In normal operation, your agent ignores them. When prompt injection overrides behavior, the decoy catches the full attack payload and alerts you.
+Decoy adds a decoy MCP server alongside your real tools — 12 tripwire tools like `execute_command`, `read_file`, and `make_payment` that no legitimate agent should ever call. When a prompt injection attack tricks your agent into calling one, Decoy captures the full payload and alerts you instantly.
 
 ## Quick start
 
@@ -117,14 +117,14 @@ Add to your `claude_desktop_config.json`:
   "mcpServers": {
     "system-tools": {
       "command": "node",
-      "args": ["~/.config/Claude/decoy/server.mjs"],
+      "args": ["~/Library/Application Support/Claude/decoy/server.mjs"],
       "env": { "DECOY_TOKEN": "your-token" }
     }
   }
 }
 ```
 
-Get a token at [decoy.run](https://decoy.run).
+Get a token at [app.decoy.run/login](https://app.decoy.run/login?signup).
 
 ## Dashboard
 
@@ -134,9 +134,9 @@ Your dashboard is at [app.decoy.run/dashboard](https://app.decoy.run/dashboard).
 
 You can also sign in with your token directly. Find it with `npx decoy-mcp status`.
 
-**Free** — 12 tripwire tools, 7-day history, email alerts for triggers, weekly threat digest, dashboard + API. Forever.
+**Free** — 12 tripwire tools, 7-day history, email alerts, dashboard + API. Forever.
 
-**Pro ($9/mo)** — 90-day history, Slack + webhook alerts for triggers, threat digest to Slack, multiple projects, agent fingerprinting.
+**Pro ($9/mo)** — 90-day history, Slack + webhook alerts, agent fingerprinting, agent pause/resume.
 
 ## Local-only mode
 
@@ -169,7 +169,7 @@ This is the same principle behind canary tokens and network deception. Tripwires
 
 ## Research
 
-We tested prompt injection against 12 models. Qwen 2.5 was fully compromised at both 7B and 14B — it called all three tools with attacker-controlled arguments. All Claude models resisted.
+We tested prompt injection against 12 models. Qwen 2.5 was fully compromised at both 7B and 14B — it called all three tools with attacker-controlled arguments. All Claude models resisted. Read the full report: [State of Prompt Injection 2026](https://decoy.run/blog/state-of-prompt-injection-2026).
 
 ## License
 
