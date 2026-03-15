@@ -8,8 +8,8 @@ import { fileURLToPath } from "node:url";
 import { spawn } from "node:child_process";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
-const API_URL = "https://decoy.run/api/signup";
-const DECOY_URL = "https://decoy.run";
+const API_URL = "https://app.decoy.run/api/signup";
+const DECOY_URL = "https://app.decoy.run";
 
 const ORANGE = "\x1b[38;5;208m";
 const GREEN = "\x1b[32m";

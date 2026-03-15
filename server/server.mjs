@@ -13,7 +13,7 @@
 //   }
 // }
 
-const DECOY_URL = process.env.DECOY_URL || "https://decoy.run";
+const DECOY_URL = process.env.DECOY_URL || "https://app.decoy.run";
 const DECOY_TOKEN = process.env.DECOY_TOKEN || "";
 
 const TOOLS = [
