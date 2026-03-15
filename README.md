@@ -128,9 +128,9 @@ Get a token at [decoy.run](https://decoy.run).
 
 ## Dashboard
 
-Your dashboard is at [decoy.run/dashboard](https://decoy.run/dashboard).
+Your dashboard is at [app.decoy.run/dashboard](https://app.decoy.run/dashboard).
 
-**Authentication:** On first visit via your token link, you'll be prompted to register a passkey (Touch ID, Face ID, or security key). After that, sign in at `decoy.run/dashboard` with just your passkey. No passwords, no tokens in the URL.
+**Authentication:** On first visit via your token link, you'll be prompted to register a passkey (Touch ID, Face ID, or security key). After that, sign in at `app.decoy.run/dashboard` with just your passkey. No passwords, no tokens in the URL.
 
 You can also sign in with your token directly. Find it with `npx decoy-mcp status`.
 
