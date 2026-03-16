@@ -57,6 +57,42 @@ function claudeCodeConfigPath() {
   return join(home, ".claude.json");
 }
 
+function scanCachePath() {
+  return join(homedir(), ".decoy", "scan.json");
+}
+
+function saveScanResults(data) {
+  const p = scanCachePath();
+  mkdirSync(dirname(p), { recursive: true });
+  writeFileSync(p, JSON.stringify(data, null, 2) + "\n");
+}
+
+function loadScanResults() {
+  try {
+    return JSON.parse(readFileSync(scanCachePath(), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
+function scanCachePath() {
+  return join(homedir(), ".decoy", "scan.json");
+}
+
+function saveScanResults(data) {
+  const p = scanCachePath();
+  mkdirSync(dirname(p), { recursive: true });
+  writeFileSync(p, JSON.stringify(data, null, 2) + "\n");
+}
+
+function loadScanResults() {
+  try {
+    return JSON.parse(readFileSync(scanCachePath(), "utf8"));
+  } catch {
+    return null;
+  }
+}
+
 const HOSTS = {
   "claude-desktop": { name: "Claude Desktop", configPath: claudeDesktopConfigPath, format: "mcpServers" },
   "cursor": { name: "Cursor", configPath: cursorConfigPath, format: "mcpServers" },
@@ -340,11 +376,25 @@ async function status(flags) {
   }
 
   try {
-    const res = await fetch(`${DECOY_URL}/api/triggers?token=${token}`);
-    const data = await res.json();
+    const [triggerRes, configRes] = await Promise.all([
+      fetch(`${DECOY_URL}/api/triggers?token=${token}`),
+      fetch(`${DECOY_URL}/api/config?token=${token}`),
+    ]);
+    const data = await triggerRes.json();
+    const configData = await configRes.json().catch(() => ({}));
+    const isPro = (configData.plan || "free") !== "free";
+    const scanData = loadScanResults();
 
     if (flags.json) {
-      log(JSON.stringify({ token: token.slice(0, 8) + "...", count: data.count, triggers: data.triggers?.slice(0, 5) || [], dashboard: `${DECOY_URL}/dashboard?token=${token}` }));
+      const jsonOut = { token: token.slice(0, 8) + "...", count: data.count, triggers: data.triggers?.slice(0, 5) || [], dashboard: `${DECOY_URL}/dashboard?token=${token}` };
+      if (isPro && scanData) {
+        jsonOut.triggers = jsonOut.triggers.map(t => {
+          const exposures = findExposures(t.tool, scanData);
+          return { ...t, exposed: exposures.length > 0, exposures };
+        });
+        jsonOut.scan_timestamp = scanData.timestamp;
+      }
+      log(JSON.stringify(jsonOut));
       return;
     }
 
@@ -358,7 +408,28 @@ async function status(flags) {
       const recent = data.triggers.slice(0, 5);
       for (const t of recent) {
         const severity = t.severity === "critical" ? `${RED}${t.severity}${RESET}` : `${DIM}${t.severity}${RESET}`;
-        log(`  ${DIM}${t.timestamp}${RESET}  ${WHITE}${t.tool}${RESET}  ${severity}`);
+
+        if (isPro && scanData) {
+          const exposures = findExposures(t.tool, scanData);
+          const tag = exposures.length > 0
+            ? `  ${RED}${BOLD}EXPOSED${RESET}`
+            : `  ${GREEN}no matching tools${RESET}`;
+          log(`  ${DIM}${t.timestamp}${RESET}  ${WHITE}${t.tool}${RESET}  ${severity}${tag}`);
+          for (const e of exposures.slice(0, 2)) {
+            log(`  ${DIM}  ↳ ${e.server} → ${e.tool}${RESET}`);
+          }
+        } else {
+          log(`  ${DIM}${t.timestamp}${RESET}  ${WHITE}${t.tool}${RESET}  ${severity}`);
+        }
+      }
+
+      if (!isPro) {
+        log("");
+        log(`  ${ORANGE}!${RESET} ${WHITE}Exposure analysis${RESET} ${DIM}— see which triggers could have succeeded${RESET}`);
+        log(`  ${DIM}  Upgrade to Pro: ${ORANGE}${DECOY_URL}/dashboard?token=${token}${RESET}`);
+      } else if (!scanData) {
+        log("");
+        log(`  ${DIM}Run ${BOLD}npx decoy-mcp scan${RESET}${DIM} to enable exposure analysis${RESET}`);
       }
     } else {
       log("");
@@ -734,13 +805,51 @@ async function watch(flags) {
     process.exit(1);
   }
 
+  // Load scan data + plan for exposure analysis
+  const scanData = loadScanResults();
+  let isPro = false;
+  try {
+    const configRes = await fetch(`${DECOY_URL}/api/config?token=${token}`);
+    const configData = await configRes.json();
+    isPro = (configData.plan || "free") !== "free";
+  } catch {}
+
   log("");
   log(`  ${ORANGE}${BOLD}decoy${RESET} ${DIM}— watching for triggers${RESET}`);
+  if (isPro && scanData) {
+    log(`  ${DIM}Exposure analysis active (scan: ${new Date(scanData.timestamp).toLocaleDateString()})${RESET}`);
+  }
   log(`  ${DIM}Press Ctrl+C to stop${RESET}`);
   log("");
 
   let lastSeen = null;
   const interval = parseInt(flags.interval) || 5;
+
+  function formatTrigger(t) {
+    const severity = t.severity === "critical"
+      ? `${RED}${BOLD}CRITICAL${RESET}`
+      : t.severity === "high"
+        ? `${ORANGE}HIGH${RESET}`
+        : `${DIM}${t.severity}${RESET}`;
+
+    const time = new Date(t.timestamp).toLocaleTimeString();
+    let exposureTag = "";
+    if (isPro && scanData) {
+      const exposures = findExposures(t.tool, scanData);
+      exposureTag = exposures.length > 0
+        ? `  ${RED}${BOLD}EXPOSED${RESET} ${DIM}(${exposures.map(e => e.server + "→" + e.tool).join(", ")})${RESET}`
+        : `  ${GREEN}no matching tools${RESET}`;
+    }
+
+    log(`  ${DIM}${time}${RESET}  ${severity}  ${WHITE}${t.tool}${RESET}${exposureTag}`);
+
+    if (t.arguments) {
+      const argStr = JSON.stringify(t.arguments);
+      if (argStr.length > 2) {
+        log(`  ${DIM}         ${argStr.length > 80 ? argStr.slice(0, 77) + "..." : argStr}${RESET}`);
+      }
+    }
+  }
 
   const poll = async () => {
     try {
@@ -751,22 +860,7 @@ async function watch(flags) {
 
       for (const t of data.triggers.slice().reverse()) {
         if (lastSeen && t.timestamp <= lastSeen) continue;
-
-        const severity = t.severity === "critical"
-          ? `${RED}${BOLD}CRITICAL${RESET}`
-          : t.severity === "high"
-            ? `${ORANGE}HIGH${RESET}`
-            : `${DIM}${t.severity}${RESET}`;
-
-        const time = new Date(t.timestamp).toLocaleTimeString();
-        log(`  ${DIM}${time}${RESET}  ${severity}  ${WHITE}${t.tool}${RESET}`);
-
-        if (t.arguments) {
-          const argStr = JSON.stringify(t.arguments);
-          if (argStr.length > 2) {
-            log(`  ${DIM}         ${argStr.length > 80 ? argStr.slice(0, 77) + "..." : argStr}${RESET}`);
-          }
-        }
+        formatTrigger(t);
       }
 
       lastSeen = data.triggers[0]?.timestamp || lastSeen;
@@ -780,16 +874,9 @@ async function watch(flags) {
     const res = await fetch(`${DECOY_URL}/api/triggers?token=${token}`);
     const data = await res.json();
     if (data.triggers?.length > 0) {
-      // Show last 3 triggers as context
       const recent = data.triggers.slice(0, 3).reverse();
       for (const t of recent) {
-        const severity = t.severity === "critical"
-          ? `${RED}${BOLD}CRITICAL${RESET}`
-          : t.severity === "high"
-            ? `${ORANGE}HIGH${RESET}`
-            : `${DIM}${t.severity}${RESET}`;
-        const time = new Date(t.timestamp).toLocaleTimeString();
-        log(`  ${DIM}${time}${RESET}  ${severity}  ${WHITE}${t.tool}${RESET}`);
+        formatTrigger(t);
       }
       lastSeen = data.triggers[0].timestamp;
       log("");
@@ -945,6 +1032,90 @@ function classifyTool(tool) {
     }
   }
   return "low";
+}
+
+// ─── Exposure analysis ───
+// Maps each tripwire tool to patterns that identify real tools with the same capability.
+// When a tripwire fires, we check if the user has a real tool that could fulfill the attack.
+
+const CAPABILITY_PATTERNS = {
+  execute_command: {
+    names: [/exec/, /command/, /shell/, /bash/, /terminal/, /run_command/],
+    descriptions: [/execut(e|ing)\s+(a\s+)?(shell|command|script|code)/i, /run\s+(shell|bash|system)\s+command/i, /terminal/i],
+  },
+  read_file: {
+    names: [/read_file/, /get_file/, /file_read/, /read_content/, /cat$/],
+    descriptions: [/read\s+(the\s+)?(contents?|file)/i, /file\s+contents?/i],
+  },
+  write_file: {
+    names: [/write_file/, /create_file/, /file_write/, /save_file/, /put_file/],
+    descriptions: [/write\s+(content\s+)?to\s+(a\s+)?file/i, /create\s+(a\s+)?file/i, /save.*file/i],
+  },
+  http_request: {
+    names: [/http/, /fetch/, /curl/, /request/, /api_call/, /web_fetch/],
+    descriptions: [/http\s+request/i, /fetch\s+(a\s+)?url/i, /make.*request/i],
+  },
+  database_query: {
+    names: [/database/, /sql/, /query/, /db_/, /postgres/, /mysql/, /mongo/],
+    descriptions: [/sql\s+query/i, /database/i, /execute.*query/i],
+  },
+  send_email: {
+    names: [/send_email/, /email/, /mail/, /smtp/],
+    descriptions: [/send\s+(an?\s+)?email/i, /smtp/i],
+  },
+  access_credentials: {
+    names: [/credential/, /secret/, /vault/, /keychain/, /api_key/, /password/],
+    descriptions: [/credential/i, /secret/i, /api[_\s]?key/i, /vault/i],
+  },
+  make_payment: {
+    names: [/payment/, /pay/, /transfer/, /billing/, /charge/],
+    descriptions: [/payment/i, /transfer\s+funds/i, /billing/i],
+  },
+  authorize_service: {
+    names: [/authorize/, /oauth/, /grant/, /permission/],
+    descriptions: [/grant\s+(trust|auth|permission)/i, /oauth/i, /authorize/i],
+  },
+  modify_dns: {
+    names: [/dns/, /nameserver/, /route53/, /cloudflare.*record/],
+    descriptions: [/dns\s+record/i, /modify\s+dns/i],
+  },
+  install_package: {
+    names: [/install/, /pip_install/, /npm_install/, /package/],
+    descriptions: [/install\s+(a\s+)?package/i],
+  },
+  get_environment_variables: {
+    names: [/env/, /environment/, /getenv/],
+    descriptions: [/environment\s+variable/i, /env.*var/i],
+  },
+};
+
+function findExposures(triggerToolName, scanData) {
+  const patterns = CAPABILITY_PATTERNS[triggerToolName];
+  if (!patterns || !scanData?.servers) return [];
+
+  const matches = [];
+  for (const server of scanData.servers) {
+    if (server.name === "system-tools") continue;
+    for (const tool of (server.tools || [])) {
+      const name = (tool.name || "").toLowerCase();
+      const desc = tool.description || "";
+
+      let matched = false;
+      for (const re of patterns.names) {
+        if (re.test(name)) { matched = true; break; }
+      }
+      if (!matched) {
+        for (const re of patterns.descriptions) {
+          if (re.test(desc)) { matched = true; break; }
+        }
+      }
+
+      if (matched) {
+        matches.push({ server: server.name, tool: tool.name, description: desc });
+      }
+    }
+  }
+  return matches;
 }
 
 function probeServer(serverName, entry, env) {
@@ -1195,6 +1366,32 @@ async function scan(flags) {
     log(`  ${GREEN}\u2713${RESET} Low risk — no dangerous tools detected`);
   }
 
+  // Save scan results locally for exposure analysis
+  const scanData = {
+    timestamp: new Date().toISOString(),
+    servers: allFindings.filter(f => !f.error).map(f => ({
+      name: f.server,
+      hosts: f.hosts,
+      tools: f.tools,
+    })),
+  };
+  saveScanResults(scanData);
+
+  if (!flags.json) {
+    log("");
+    log(`  ${GREEN}\u2713${RESET} Scan saved — triggers will now show exposure analysis`);
+  }
+
+  // Upload to backend for enriched alerts (fire and forget)
+  const token = findToken(flags);
+  if (token) {
+    fetch(`${DECOY_URL}/api/scan?token=${token}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(scanData),
+    }).catch(() => {});
+  }
+
   log("");
 }
 
@@ -1252,7 +1449,7 @@ switch (cmd) {
     log(`  ${ORANGE}${BOLD}decoy-mcp${RESET} ${DIM}— security tripwires for AI agents${RESET}`);
     log("");
     log(`  ${WHITE}Commands:${RESET}`);
-    log(`    ${BOLD}scan${RESET}                  Scan MCP servers for risky tools`);
+    log(`    ${BOLD}scan${RESET}                  Scan MCP servers for risky tools + enable exposure analysis`);
     log(`    ${BOLD}init${RESET}                  Sign up and install tripwires`);
     log(`    ${BOLD}login${RESET}                 Log in with an existing token`);
     log(`    ${BOLD}doctor${RESET}                Diagnose setup issues`);
