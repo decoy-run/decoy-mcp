@@ -218,6 +218,15 @@ async function init(flags) {
   try {
     data = await signup(email);
   } catch (e) {
+    if (e.message.includes("already exists")) {
+      log(`  ${DIM}Account exists for ${email}. Log in with your token:${RESET}`);
+      log("");
+      log(`    ${BOLD}npx decoy-mcp login --token=YOUR_TOKEN${RESET}`);
+      log("");
+      log(`  ${DIM}Find your token in your welcome email or at${RESET}`);
+      log(`  ${DIM}https://app.decoy.run/login${RESET}`);
+      process.exit(1);
+    }
     log(`  ${RED}${e.message}${RESET}`);
     process.exit(1);
   }
@@ -564,7 +573,8 @@ async function login(flags) {
 }
 
 function pad(str, width) {
-  return str.length >= width ? str : str + " ".repeat(width - str.length);
+  const s = String(str || "");
+  return s.length >= width ? s : s + " ".repeat(width - s.length);
 }
 
 function timeAgo(isoString) {
