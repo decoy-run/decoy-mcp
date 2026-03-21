@@ -5,7 +5,7 @@ Security tripwires for AI agents. Detect prompt injection in real time.
 [![npm](https://img.shields.io/npm/v/decoy-mcp)](https://www.npmjs.com/package/decoy-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
-Decoy adds a decoy MCP server alongside your real tools — 12 tripwire tools like `execute_command`, `read_file`, and `make_payment` that no legitimate agent should ever call. When a prompt injection attack tricks your agent into calling one, Decoy captures the full payload and alerts you instantly.
+Decoy adds a decoy MCP server alongside your real tools — 12 built-in tripwire tools plus dynamically generated tools unique to your deployment. Tools like `execute_command`, `aws_iam_create_admin_role`, and `vault_unseal` that no legitimate agent should ever call. When a prompt injection attack tricks your agent into calling one, Decoy captures the full payload with rich session telemetry and alerts you instantly.
 
 **Works with:** Claude Desktop, Cursor, Windsurf, VS Code, Claude Code
 
@@ -42,11 +42,12 @@ No terminal, no browser, no human. The agent discovers Decoy, signs up, configur
 ## How It Works
 
 1. Decoy registers as an MCP server called `system-tools` alongside your real tools
-2. It exposes 12 tripwire tools that look like real system access
-3. Your agent has no reason to call them — it uses its real tools
-4. If prompt injection forces the agent to reach for unauthorized access, the tripwire fires
-5. You get the full payload: what tool, what arguments, severity, timestamp
-6. Alerts go to your dashboard, email, Slack, or webhooks
+2. It exposes 12 built-in tripwires + dynamically generated tools from 6 threat categories
+3. Each deployment gets a unique, deterministic set — attackers can't learn a fixed tool list
+4. Your agent has no reason to call them — it uses its real tools
+5. If prompt injection forces the agent to reach for unauthorized access, the tripwire fires
+6. You get the full payload: tool, arguments, severity, client identity, session context, and tool call sequence
+7. Alerts go to your dashboard, email, Slack, or webhooks
 
 Every tool returns a realistic error response. The agent sees a timeout or permission denied — not a detection signal. Attackers don't know they've been caught.
 
@@ -66,6 +67,40 @@ Every tool returns a realistic error response. The agent sees a timeout or permi
 | `send_email` | Email sending via SMTP relay | High |
 | `install_package` | Package installation from registries | High |
 | `get_environment_variables` | Secret harvesting (API keys, tokens) | High |
+
+## Dynamic Tripwires
+
+In addition to the 12 built-in tools, Decoy generates additional tripwires from 6 threat-relevant categories:
+
+| Category | Example Tools |
+|----------|--------------|
+| Cloud Infrastructure | `aws_iam_create_admin_role`, `gcp_service_account_key_export`, `azure_keyvault_list_secrets` |
+| Secrets Management | `vault_unseal`, `github_admin_token_reset`, `rotate_master_encryption_key` |
+| Payment & Billing | `stripe_refund_payment`, `transfer_crypto_wallet` |
+| CI/CD & Deploy | `github_actions_inject_secret`, `deploy_production_hotfix`, `kubernetes_apply_manifest` |
+| Identity & SSO | `okta_create_admin_user`, `saml_assertion_forge`, `oauth_token_exchange` |
+| Network & DNS | `cloudflare_dns_override`, `firewall_rule_disable`, `vpn_tunnel_create` |
+
+Each tool has a full JSON-RPC schema with realistic parameters. Control how many are generated:
+
+```bash
+# Default: 6 random tools from the pool
+DECOY_HONEY_TOOLS=12    # Generate 12 tools
+DECOY_HONEY_TOOLS=all   # All 27 tools
+```
+
+The selection is deterministic per token — same token always gets the same tools, but different deployments get different sets.
+
+## Session Telemetry
+
+Decoy captures rich metadata from every MCP session and emits structured JSON lines to stderr:
+
+```
+{"event":"session.start","clientName":"claude-code","clientVersion":"1.0.28","protocolVersion":"2024-11-05"}
+{"event":"tool.call","tool":"execute_command","isTripwire":true,"sequence":3,"clientName":"claude-code"}
+```
+
+Cloud-reported triggers include full session context: client identity, session duration, and tool call position in the sequence. Pipe stderr to any monitoring tool — Datadog, Grafana, or a local file.
 
 ## Scan Your Attack Surface
 
@@ -185,9 +220,13 @@ Your dashboard is at [app.decoy.run/dashboard](https://app.decoy.run/dashboard).
 
 ## Plans
 
-**Free** — 12 tripwire tools, 7-day history, email alerts, dashboard + API. No credit card.
+**Free** — All tripwires (12 built-in + dynamic), 90-day history, email/Slack/webhook alerts, agent fingerprinting, risk scores, SIEM export. No credit card.
 
-**Pro ($9/mo)** — 90-day history, Slack + webhook alerts, agent fingerprinting, agent pause/resume. Agents can self-upgrade via `decoy_upgrade`.
+**Pro ($99/mo)** — Threat intel feed API, automated security testing, vulnerability database, weekly digest.
+
+**Team ($299/mo)** — Continuous scanning, shadow MCP discovery, CI/CD integration, Slack/PagerDuty.
+
+**Business ($999/mo)** — OWASP compliance reports, gateway integrations, custom detection rules, priority support.
 
 ## Local-Only Mode
 

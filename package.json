@@ -1,6 +1,6 @@
 {
   "name": "decoy-mcp",
-  "version": "0.6.0",
+  "version": "0.7.0",
   "description": "Security tripwires for AI agents. Detect prompt injection in real time.",
   "bin": {
     "decoy-mcp": "bin/cli.mjs"

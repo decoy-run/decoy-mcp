@@ -1290,7 +1290,7 @@ async function handleMessage(msg) {
     process.stderr.write(JSON.stringify({
       event: "tool.call",
       tool: toolName,
-      isHoneypot: !toolName.startsWith("decoy_"),
+      isTripwire: !toolName.startsWith("decoy_"),
       sequence: session.toolCallCount,
       clientName: session.clientName,
       timestamp: new Date().toISOString(),
