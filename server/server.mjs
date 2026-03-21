@@ -76,17 +76,12 @@ const MANAGEMENT_TOOLS = [
   },
   {
     name: "decoy_upgrade",
-    description: "Upgrade to Decoy Pro ($9/mo). Enables Slack/webhook alerts, agent controls, and 90-day history.",
+    description: "Get a secure checkout link to upgrade to Decoy Guard Pro ($99/mo), Team ($299/mo), or Business ($999/mo).",
     inputSchema: {
       type: "object",
       properties: {
-        card_number: { type: "string", description: "Credit card number" },
-        exp_month: { type: "number", description: "Expiration month (1-12)" },
-        exp_year: { type: "number", description: "Expiration year (e.g. 2027)" },
-        cvc: { type: "string", description: "Card CVC/CVV" },
-        billing: { type: "string", description: "Billing cycle: monthly or annually", default: "monthly" }
-      },
-      required: ["card_number", "exp_month", "exp_year", "cvc"]
+        plan: { type: "string", description: "Plan to upgrade to: pro, team, or business", default: "pro" }
+      }
     }
   },
   {
@@ -699,7 +694,7 @@ async function handleDecoySignup(args) {
       dashboardUrl: data.dashboardUrl,
       next_steps: {
         configure: "Call the decoy_configure tool with this token to activate cloud reporting",
-        upgrade: "Call the decoy_upgrade tool with card details to unlock Pro features",
+        upgrade: "Call decoy_upgrade to get a secure checkout link for Pro features",
         alerts: "Call the decoy_configure_alerts tool to set up Slack/webhook alerts"
       }
     };
@@ -736,7 +731,7 @@ async function handleDecoyConfigure(args) {
     message: "Decoy configured. Tripwires are now reporting to cloud. Restart MCP hosts for config changes to take effect.",
     hosts: results,
     next_steps: {
-      upgrade: "Call decoy_upgrade to unlock Pro features ($9/mo)",
+      upgrade: "Call decoy_upgrade to unlock Pro features ($99/mo)",
       alerts: "Call decoy_configure_alerts to set up Slack/webhook alerts",
       status: "Call decoy_status to check your plan and trigger count"
     }
@@ -781,23 +776,26 @@ async function handleDecoyUpgrade(args) {
     return { error: "Decoy not configured. Call decoy_configure first." };
   }
 
-  const { card_number, exp_month, exp_year, cvc, billing } = args;
-  if (!card_number || !exp_month || !exp_year || !cvc) {
-    return { error: "Card details required: card_number, exp_month, exp_year, cvc" };
+  const plan = args.plan || "pro";
+  if (!["pro", "team", "business"].includes(plan)) {
+    return { error: "Plan must be one of: pro, team, business" };
   }
 
   try {
-    const res = await fetch(`${DECOY_URL}/api/upgrade`, {
+    const res = await fetch(`${DECOY_URL}/billing/checkout`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        token: currentToken,
-        card: { number: card_number, exp_month, exp_year, cvc },
-        billing: billing || "monthly",
-      }),
+      body: JSON.stringify({ token: currentToken, plan }),
     });
     const data = await res.json();
     if (!res.ok) return { error: data.error || `Upgrade failed (${res.status})`, action: data.action };
+    if (data.url) {
+      return {
+        message: `Checkout link ready for ${plan.charAt(0).toUpperCase() + plan.slice(1)} plan. Open this URL in a browser to complete payment securely via Stripe.`,
+        checkoutUrl: data.url,
+        plan,
+      };
+    }
     return data;
   } catch (e) {
     return { error: `Could not reach Decoy API: ${e.message}` };

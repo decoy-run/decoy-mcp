@@ -5,6 +5,9 @@ Security tripwires for AI agents. Detect prompt injection in real time.
 [![npm](https://img.shields.io/npm/v/decoy-mcp)](https://www.npmjs.com/package/decoy-mcp)
 [![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](LICENSE)
 
+<!-- Demo: npx decoy-mcp init -->
+![decoy-mcp demo](https://res.cloudinary.com/dohqjvu9k/image/upload/v1/decoy-mcp-demo.gif)
+
 Decoy adds a decoy MCP server alongside your real tools — 12 built-in tripwire tools plus dynamically generated tools unique to your deployment. Tools like `execute_command`, `aws_iam_create_admin_role`, and `vault_unseal` that no legitimate agent should ever call. When a prompt injection attack tricks your agent into calling one, Decoy captures the full payload with rich session telemetry and alerts you instantly.
 
 **Works with:** Claude Desktop, Cursor, Windsurf, VS Code, Claude Code
