@@ -74,7 +74,23 @@ npx decoy-tripwire upgrade                 # Upgrade to Team (via dashboard)
 npx decoy-tripwire uninstall --confirm     # Remove from all MCP hosts
 ```
 
-All commands support `--json` for scripting and `--token=xxx` to override the stored token.
+All commands support `--json` for scripting and `--token-file=PATH` to override
+the stored token. `--token=xxx` also works, but it is visible to every process
+on the machine via `ps` and lands in shell history — prefer the file form (or
+`DECOY_TOKEN_FILE`) in CI.
+
+Flags are validated: a misspelled one is an error with a spelling suggestion
+rather than being silently ignored. A real flag on the wrong command
+(`status --no-wrap`) warns but still runs. Add `--no-input` to fail instead of
+prompting.
+
+### Exit codes
+
+| Code | Meaning |
+|------|---------|
+| `0` | Success |
+| `1` | Command failed, including a usage error |
+| `130` | Interrupted with Ctrl-C |
 
 ## 🪤 Tripwire Tools
 

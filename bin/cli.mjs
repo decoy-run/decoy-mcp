@@ -9,6 +9,17 @@ import { join, dirname } from "node:path";
 import { homedir } from "node:os";
 import { fileURLToPath } from "node:url";
 import { HOSTS } from "../server/hosts.mjs";
+import {
+  EXIT_USAGE,
+  findUnknownFlag,
+  reportUnknownFlag,
+  reportUnknownCommand,
+  resolveColor,
+  canPrompt,
+  fetchWithTimeout,
+  isTimeoutError,
+  onInterrupt,
+} from "../server/argv.mjs";
 
 const __dirname = dirname(fileURLToPath(import.meta.url));
 
@@ -23,10 +34,7 @@ const API_URL = `${DECOY_URL}/api/signup`;
 
 const rawArgs = process.argv.slice(2);
 const isTTY = process.stderr.isTTY;
-const noColor = rawArgs.includes("--no-color") ||
-  "NO_COLOR" in process.env ||
-  process.env.TERM === "dumb" ||
-  (!isTTY && !process.env.FORCE_COLOR);
+const noColor = !resolveColor(rawArgs, process.stderr);
 
 const c = noColor
   ? { bold: "", dim: "", red: "", green: "", yellow: "", orange: "", cyan: "", magenta: "", white: "", underline: "", reset: "" }
@@ -58,23 +66,41 @@ function out(msg) {
 
 // ─── Spinner ───
 
+// Tracked so the interrupt handler can clear the line and restore the cursor
+// before the shell prompt comes back.
+let activeSpinner = null;
+
 function spinner(label) {
   if (!isTTY || quietMode) return { stop() {}, update() {} };
   const frames = ["⠋", "⠙", "⠹", "⠸", "⠼", "⠴", "⠦", "⠧", "⠇", "⠏"];
   let i = 0;
   let text = label;
+  const started = Date.now();
+  process.stderr.write("\x1b[?25l");
   const id = setInterval(() => {
-    process.stderr.write(`\r  ${c.dim}${frames[i++ % frames.length]} ${text}${c.reset}\x1b[K`);
+    // Past a few seconds, show elapsed time so a slow install or API call
+    // reads as working rather than wedged.
+    const secs = Math.round((Date.now() - started) / 1000);
+    const elapsed = secs >= 3 ? ` ${c.dim}(${secs}s)${c.reset}` : "";
+    process.stderr.write(`\r  ${c.dim}${frames[i++ % frames.length]} ${text}${c.reset}${elapsed}\x1b[K`);
   }, 80);
-  return {
+  const handle = {
     update(newLabel) { text = newLabel; },
     stop(finalMsg) {
       clearInterval(id);
-      process.stderr.write("\r\x1b[K");
+      process.stderr.write("\r\x1b[K\x1b[?25h");
+      if (activeSpinner === handle) activeSpinner = null;
       if (finalMsg) log(finalMsg);
     },
   };
+  activeSpinner = handle;
+  return handle;
 }
+
+onInterrupt(() => {
+  activeSpinner?.stop();
+  process.stderr.write("\x1b[?25h");
+});
 
 // ─── Config paths for each MCP host ───
 // HOSTS is the canonical host-config table imported from ../server/hosts.mjs
@@ -95,10 +121,11 @@ function loadScanResults() {
 // ─── Helpers ───
 
 function prompt(question) {
-  if (!process.stdin.isTTY) {
-    log(`  ${c.red}error:${c.reset} This command requires interactive input.`);
-    log(`  ${c.dim}Pass the value via flags instead (see --help).${c.reset}`);
-    process.exit(1);
+  if (!canPrompt(rawArgs)) {
+    // Errors always print, even under --quiet.
+    process.stderr.write(`  ${c.red}error:${c.reset} this command needs an interactive terminal\n`);
+    process.stderr.write(`  ${c.dim}Pass the value as a flag instead — see \`decoy-tripwire --help\`.${c.reset}\n`);
+    process.exit(EXIT_USAGE);
   }
   const rl = createInterface({ input: process.stdin, output: process.stderr });
   return new Promise(resolve => {
@@ -179,7 +206,7 @@ function requireToken(flags) {
 }
 
 async function signup(email) {
-  const res = await fetch(API_URL, {
+  const res = await fetchWithTimeout(API_URL, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
     body: JSON.stringify({ email }),
@@ -239,7 +266,27 @@ function wrapExistingServers(servers, installDir, token) {
   return wrapped;
 }
 
+// A token passed as --token= is visible to every other process on the box via
+// `ps`, and lands in shell history. --token-file/DECOY_TOKEN_FILE reads it
+// from a file instead; that is the form to use in CI.
+function loadTokenFile(path) {
+  try {
+    const t = readFileSync(path, "utf8").trim();
+    if (t.length < 16) {
+      process.stderr.write(`error: token file ${path} does not contain a valid token\n`);
+      process.exit(EXIT_USAGE);
+    }
+    return t;
+  } catch (e) {
+    process.stderr.write(`error: cannot read token file ${path}: ${e.message}\n`);
+    process.exit(EXIT_USAGE);
+  }
+}
+
 function findToken(flags) {
+  const tokenFile = flags["token-file"] || process.env.DECOY_TOKEN_FILE;
+  if (tokenFile) return loadTokenFile(tokenFile);
+
   let token = flags.token || process.env.DECOY_TOKEN;
   if (token) return token;
 
@@ -401,7 +448,7 @@ async function init(flags) {
   if (!process.env.DECOY_URL) {
     const sp = spinner("Verifying token…");
     try {
-      const res = await fetch(`${DECOY_URL}/api/triggers`, {
+      const res = await fetchWithTimeout(`${DECOY_URL}/api/triggers`, {
         headers: { "Authorization": `Bearer ${token}` },
       });
       if (!res.ok) {
@@ -490,7 +537,7 @@ async function login(flags) {
   // Verify
   const sp = spinner("Verifying token…");
   try {
-    const res = await fetch(`${DECOY_URL}/api/triggers`, {
+    const res = await fetchWithTimeout(`${DECOY_URL}/api/triggers`, {
       headers: { "Authorization": `Bearer ${token}` },
     });
     if (!res.ok) {
@@ -557,7 +604,7 @@ async function test(flags) {
 
   const sp = spinner("Sending test trigger…");
   try {
-    const res = await fetch(`${DECOY_URL}/mcp/${token}`, {
+    const res = await fetchWithTimeout(`${DECOY_URL}/mcp/${token}`, {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify(testPayload),
@@ -571,7 +618,7 @@ async function test(flags) {
       process.exit(1);
     }
 
-    const statusRes = await fetch(`${DECOY_URL}/api/triggers`, {
+    const statusRes = await fetchWithTimeout(`${DECOY_URL}/api/triggers`, {
       headers: { "Authorization": `Bearer ${token}` },
     });
     const data = await statusRes.json();
@@ -819,7 +866,7 @@ async function agents(flags) {
   const sp = !flags.json ? spinner("Fetching agents…") : { stop() {} };
 
   try {
-    const res = await fetch(`${DECOY_URL}/api/agents`, {
+    const res = await fetchWithTimeout(`${DECOY_URL}/api/agents`, {
       headers: { "Authorization": `Bearer ${token}` },
     });
     const data = await res.json();
@@ -905,7 +952,7 @@ async function setAgentStatus(agentName, newStatus, flags) {
   const sp = spinner(`${verb} ${agentName}…`);
 
   try {
-    const res = await fetch(`${DECOY_URL}/api/agents`, {
+    const res = await fetchWithTimeout(`${DECOY_URL}/api/agents`, {
       method: "PATCH",
       headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
       body: JSON.stringify({ name: agentName, status: newStatus }),
@@ -1049,7 +1096,7 @@ async function config(flags) {
 
     const sp = spinner("Updating config…");
     try {
-      const res = await fetch(`${DECOY_URL}/api/config`, {
+      const res = await fetchWithTimeout(`${DECOY_URL}/api/config`, {
         method: "PATCH",
         headers: { "Content-Type": "application/json", "Authorization": `Bearer ${token}` },
         body: JSON.stringify(body),
@@ -1086,7 +1133,7 @@ async function config(flags) {
   // Show current config
   const sp = !flags.json ? spinner("Fetching config…") : { stop() {} };
   try {
-    const res = await fetch(`${DECOY_URL}/api/config`, {
+    const res = await fetchWithTimeout(`${DECOY_URL}/api/config`, {
       headers: { "Authorization": `Bearer ${token}` },
     });
     const data = await res.json();
@@ -1172,7 +1219,7 @@ async function watch(flags) {
   const scanData = loadScanResults();
   let isPro = false;
   try {
-    const configRes = await fetch(`${DECOY_URL}/api/config`, {
+    const configRes = await fetchWithTimeout(`${DECOY_URL}/api/config`, {
       headers: { "Authorization": `Bearer ${token}` },
     });
     const configData = await configRes.json();
@@ -1217,7 +1264,7 @@ async function watch(flags) {
 
   const poll = async () => {
     try {
-      const res = await fetch(`${DECOY_URL}/api/triggers`, {
+      const res = await fetchWithTimeout(`${DECOY_URL}/api/triggers`, {
         headers: { "Authorization": `Bearer ${token}` },
       });
       const data = await res.json();
@@ -1231,13 +1278,15 @@ async function watch(flags) {
 
       lastSeen = data.triggers[0]?.timestamp || lastSeen;
     } catch (e) {
-      log(`  ${c.red}poll failed:${c.reset} ${e.message}`);
+      // A dropped poll is not fatal — say so, and keep watching.
+      const why = isTimeoutError(e) ? "request timed out" : e.message;
+      log(`  ${c.dim}poll failed (${why}) — retrying in ${interval}s${c.reset}`);
     }
   };
 
   // Initial fetch
   try {
-    const res = await fetch(`${DECOY_URL}/api/triggers`, {
+    const res = await fetchWithTimeout(`${DECOY_URL}/api/triggers`, {
       headers: { "Authorization": `Bearer ${token}` },
     });
     const data = await res.json();
@@ -1253,7 +1302,9 @@ async function watch(flags) {
       log("");
     }
   } catch (e) {
-    log(`  ${c.red}error:${c.reset} Could not connect — ${e.message}`);
+    const why = isTimeoutError(e) ? `no response within 15s` : e.message;
+    process.stderr.write(`  ${c.red}error:${c.reset} could not reach ${DECOY_URL} — ${why}\n`);
+    process.stderr.write(`  ${c.dim}Check your network connection, then re-run \`decoy-tripwire watch\`.${c.reset}\n`);
     process.exit(1);
   }
 
@@ -1329,7 +1380,7 @@ async function doctor(flags) {
   if (token) {
     const sp = !flags.json ? spinner("Checking token…") : { stop() {} };
     try {
-      const res = await fetch(`${DECOY_URL}/api/triggers`, {
+      const res = await fetchWithTimeout(`${DECOY_URL}/api/triggers`, {
         headers: { "Authorization": `Bearer ${token}` },
       });
       if (res.ok) {
@@ -1546,17 +1597,37 @@ ${c.bold}Proxy (advanced):${c.reset}
   proxy --no-decoys -- …        Omit honeypot tools from the merged tools list
 
 ${c.bold}Flags:${c.reset}
-      --token string    API token (or set DECOY_TOKEN env var)
-      --host string     Target host: claude-desktop, cursor, windsurf, vscode, claude-code
-      --no-wrap         (init) Skip wrapping existing MCP servers through the proxy
-      --all             (resume/lock) Apply to every agent
-      --json            Machine-readable JSON output
-      --brief           Minimal summary (use with --json)
-      --yes             Skip confirmation prompts
-  -q, --quiet           Suppress status output
-      --no-color        Disable colored output
-  -V, --version         Show version
-  -h, --help            Show this help
+      --token string      API token — visible in \`ps\`, prefer --token-file
+      --token-file path   Read the API token from a file
+      --host string       Target host: claude-desktop, cursor, windsurf, vscode, claude-code
+      --no-wrap           (init) Skip wrapping existing MCP servers through the proxy
+      --no-account        (init) Install without an account
+      --email string      (init) Auto-signup address, fresh emails only
+      --all               (resume/lock) Apply to every agent
+      --reason string     (lock) Note stored with the block
+      --interval number   (watch) Poll interval in seconds, default 5
+      --webhook url       (config) Set the alert webhook — pass alone to clear
+      --slack url         (config) Set the Slack webhook — pass alone to clear
+      --json              Machine-readable JSON output
+      --brief             Minimal summary (use with --json)
+      --yes               Skip confirmation prompts
+      --no-input          Never prompt; fail instead of waiting for input
+  -q, --quiet             Suppress status output
+      --no-color          Disable colored output
+      --color             Force colored output
+  -V, --version           Show version
+  -h, --help              Show this help
+
+${c.bold}Environment:${c.reset}
+  DECOY_TOKEN         API token (--token-file is safer)
+  DECOY_TOKEN_FILE    Path to a file containing the API token
+  DECOY_URL           Override the API endpoint
+  NO_COLOR            Disable colored output
+
+${c.bold}Exit codes:${c.reset}
+    0  Success
+    1  Command failed
+  130  Interrupted with Ctrl-C
 
 ${c.bold}Examples:${c.reset}
   npx decoy-tripwire init                 Set up tripwires (start here)
@@ -1569,6 +1640,10 @@ ${c.bold}Examples:${c.reset}
 ${c.bold}Agent integration:${c.reset}
   This CLI ships with AGENTS.md for AI agent reference.
   Use --json for structured output. Use --brief for minimal summaries.
+
+${c.bold}Learn more:${c.reset}
+  Docs         ${c.cyan}https://decoy.run/docs${c.reset}
+  Report a bug ${c.cyan}https://github.com/decoy-run/decoy-tripwire/issues${c.reset}
 `);
 }
 
@@ -1597,11 +1672,91 @@ if (ownArgs.includes("--help") || ownArgs.includes("-h")) {
   process.exit(0);
 }
 
+// ─── Argument validation ───
+//
+// Two tiers, deliberately. A flag no command has ever accepted is a typo and
+// is an error — that is the case parseArgs used to swallow into an unread key,
+// so `status --josn` printed human output as if nothing was wrong. A flag that
+// is real but belongs to another command only warns: it was silently ignored
+// before, and turning that into a hard failure could break a script that has
+// been passing a harmless extra flag for months.
+
+// Accepted everywhere.
+const GLOBAL_FLAGS = ["json", "brief", "quiet", "q", "no-color", "color", "no-input", "yes", "help", "h", "version", "V"];
+// Accepted by every command that talks to the API.
+const AUTH_FLAGS = ["token", "token-file"];
+
+const COMMAND_FLAGS = {
+  init:      [...AUTH_FLAGS, "host", "no-wrap", "no-account", "email"],
+  setup:     [...AUTH_FLAGS, "host", "no-wrap", "no-account", "email"],
+  login:     [...AUTH_FLAGS, "host"],
+  doctor:    [...AUTH_FLAGS],
+  test:      [...AUTH_FLAGS],
+  status:    [...AUTH_FLAGS],
+  watch:     [...AUTH_FLAGS, "interval"],
+  agents:    [...AUTH_FLAGS, "reason"],
+  config:    [...AUTH_FLAGS, "webhook", "slack", "email"],
+  upgrade:   [...AUTH_FLAGS],
+  update:    [...AUTH_FLAGS],
+  uninstall: [...AUTH_FLAGS, "host", "confirm"],
+  resume:    [...AUTH_FLAGS, "agent", "all"],
+  lock:      [...AUTH_FLAGS, "agent", "all", "reason"],
+  lockdown:  [...AUTH_FLAGS],
+  // proxy's own flags are parsed positionally in proxyCmd; everything after
+  // `--` belongs to the upstream server and is never inspected here.
+  proxy:     [...AUTH_FLAGS, "mode", "decoys", "no-decoys", "prefix", "name"],
+  scan:      [],
+};
+
+const COMMANDS = Object.keys(COMMAND_FLAGS);
+
+if (cmd && !cmd.startsWith("-") && !COMMANDS.includes(cmd)) {
+  reportUnknownCommand(cmd, COMMANDS, "decoy-tripwire");
+  process.exit(EXIT_USAGE);
+}
+
+if (cmd && COMMAND_FLAGS[cmd] && !(cmd === "proxy" && sepIdx === -1)) {
+  const everyFlag = new Set([...GLOBAL_FLAGS, ...Object.values(COMMAND_FLAGS).flat()]);
+  const thisCommand = new Set([...GLOBAL_FLAGS, ...COMMAND_FLAGS[cmd]]);
+
+  const unknown = findUnknownFlag(ownArgs.slice(1), everyFlag);
+  if (unknown) {
+    reportUnknownFlag(unknown, everyFlag, `decoy-tripwire ${cmd}`);
+    process.exit(EXIT_USAGE);
+  }
+
+  const misplaced = findUnknownFlag(ownArgs.slice(1), thisCommand);
+  if (misplaced) {
+    const owners = Object.entries(COMMAND_FLAGS)
+      .filter(([, flags]) => flags.includes(misplaced.name))
+      .map(([name]) => name);
+    process.stderr.write(`warning: ${misplaced.arg} does nothing on \`${cmd}\`; it applies to \`${owners.join("`, `")}\`\n`);
+  }
+}
+
+// Commands that take a fixed set of words rather than a free-form agent id.
+const AGENT_SUBCOMMANDS = ["pause", "resume"];
+if (cmd === "agents" && subcmd && !AGENT_SUBCOMMANDS.includes(subcmd)) {
+  reportUnknownCommand(subcmd, AGENT_SUBCOMMANDS, "decoy-tripwire agents");
+  process.exit(EXIT_USAGE);
+}
+
+const LOCKDOWN_MODES = ["on", "off", "status"];
+if (cmd === "lockdown" && subcmd && !LOCKDOWN_MODES.includes(subcmd)) {
+  reportUnknownCommand(subcmd, LOCKDOWN_MODES, "decoy-tripwire lockdown");
+  process.exit(EXIT_USAGE);
+}
+
 function run(fn) {
   fn(flags).catch(e => {
-    log(`  ${c.red}error:${c.reset} ${e.message}`);
-    if (e.message.includes("fetch") || e.message.includes("ENOTFOUND") || e.message.includes("ECONNREFUSED") || e.message.includes("network")) {
-      log(`  ${c.dim}Hint: Check your network connection. The API is at app.decoy.run${c.reset}`);
+    // Errors always print, even under --quiet.
+    process.stderr.write(`  ${c.red}error:${c.reset} ${e.message}\n`);
+    if (isTimeoutError(e)) {
+      process.stderr.write(`  ${c.dim}The request to ${DECOY_URL} timed out. Check your connection and retry.${c.reset}\n`);
+    } else if (/fetch|ENOTFOUND|ECONNREFUSED|network/.test(e.message)) {
+      process.stderr.write(`  ${c.dim}Check your network connection. The API is at ${DECOY_URL}${c.reset}\n`);
+    } else {
+      process.stderr.write(`  ${c.dim}If this looks like a bug: https://github.com/decoy-run/decoy-tripwire/issues/new${c.reset}\n`);
     }
     process.exit(1);
   });
@@ -1669,13 +1824,8 @@ switch (cmd) {
     lockdown(subcmd, flags).catch(e => { log(`  ${c.red}error:${c.reset} ${e.message}`); process.exit(1); });
     break;
   default:
-    // #12: Unknown commands should error, not silently show help.
-    if (cmd) {
-      log(`  ${c.red}error:${c.reset} Unknown command "${cmd}".`);
-      log(`  ${c.dim}Hint: Run 'npx decoy-tripwire --help' to see available commands${c.reset}`);
-      log("");
-      process.exit(1);
-    }
+    // Unknown commands are rejected up front by the validation block above;
+    // reaching here means no command was given at all.
     showHelp();
     break;
 }

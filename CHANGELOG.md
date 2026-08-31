@@ -4,6 +4,42 @@ All notable changes to this project will be documented in this file.
 
 The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/).
 
+## [0.14.0] - 2026-08-31
+
+A CLI usability pass against the [Command Line Interface Guidelines](https://clig.dev).
+Tripwire and proxy behavior is unchanged.
+
+### Fixed
+- **Misspelled flags were silently dropped.** `parseArgs` swallowed any `--flag`
+  into a key nothing read, so `status --josn` printed human output and
+  `init --no-wrp` wrapped servers anyway. A flag no command accepts is now an
+  error with a spelling suggestion. A *real* flag on the wrong command
+  (`status --no-wrap`) only warns and still runs — it was silently ignored
+  before, and failing outright could break a script that has been passing a
+  harmless extra flag for months.
+- **Unknown subcommands were accepted.** `agents puase` and `lockdown onn` ran
+  the default branch instead of erroring.
+- **Fatal errors were hidden by `--quiet`.** Errors always print now.
+- **`NO_COLOR=` (empty) disabled color.** Per no-color.org it should not.
+- **`watch` could hang indefinitely** on an unresponsive API with no output; all
+  network calls have deadlines, and a dropped poll says so and keeps watching.
+
+### Added
+- **`--token-file=PATH` and `DECOY_TOKEN_FILE`.** A token in `--token=` is
+  visible to every process on the machine via `ps` and lands in shell history.
+- **`--no-input`** — never prompt; fail with the flag that would have supplied
+  the answer.
+- **`--color`** to force color through a pipe.
+- **Ctrl-C stops now**, clearing the spinner and restoring the cursor.
+- **Elapsed time on the spinner** after a few seconds.
+- **`Environment` and `Exit codes` sections in `--help`**, plus the previously
+  undocumented `--email`, `--no-account`, `--reason`, `--interval`, `--webhook`
+  and `--slack` flags.
+
+### Changed
+- Nothing that changes an existing contract. **Exit codes are unchanged** —
+  usage errors exit `1`, same as an unknown command always has.
+
 ## [0.13.2] - 2026-05-14
 
 ### Fixed

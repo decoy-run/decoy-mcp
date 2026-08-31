@@ -74,6 +74,11 @@ describe("unknown commands", () => {
     assert.equal(exitCode, 1);
   });
 
+  it("unknown command suggests the closest real one", async () => {
+    const { stderr } = await run(["docter"]);
+    assert.match(stderr, /Did you mean `decoy-tripwire doctor`\?/);
+  });
+
   it("unknown command prints error to stderr", async () => {
     const { stderr } = await run(["boguscmd"]);
     assert.match(stderr, /unknown command.*boguscmd/i);
@@ -213,6 +218,56 @@ describe("token handling", () => {
   });
 });
 
+// ─── Argument hygiene ───
+// Before this, parseArgs swallowed any misspelled flag into an unread key, so
+// `status --josn` printed human output and `init --no-wrp` wrapped anyway.
+
+describe("argument hygiene", () => {
+  it("rejects an unknown flag", async () => {
+    const { stderr, exitCode } = await run(["status", "--josn", "--no-color"]);
+    assert.equal(exitCode, 1);
+    assert.match(stderr, /unknown flag --josn/);
+  });
+
+  it("suggests the intended flag", async () => {
+    const { stderr } = await run(["status", "--josn", "--no-color"]);
+    assert.match(stderr, /Did you mean --json\?/);
+  });
+
+  // A real flag on the wrong command only warns. It was silently ignored
+  // before, so failing outright could break a script that has been passing a
+  // harmless extra flag for months.
+  it("warns about a real flag used on the wrong command, and still runs", async () => {
+    const { stderr } = await run(["status", "--no-wrap", "--no-color"]);
+    assert.match(stderr, /warning: --no-wrap does nothing on `status`/);
+    assert.match(stderr, /applies to `init`/);
+  });
+
+  it("does not warn about that flag on the command that owns it", async () => {
+    const { stderr, exitCode } = await run(["init", "--no-wrap", "--help"]);
+    assert.equal(exitCode, 0);
+    assert.ok(!/warning/.test(stderr), stderr);
+  });
+
+  it("rejects an unknown agents subcommand", async () => {
+    const { stderr, exitCode } = await run(["agents", "puase", "--no-color"]);
+    assert.equal(exitCode, 1);
+    assert.match(stderr, /Did you mean `decoy-tripwire agents pause`\?/);
+  });
+
+  it("rejects an unknown lockdown mode", async () => {
+    const { stderr, exitCode } = await run(["lockdown", "onn", "--no-color"]);
+    assert.equal(exitCode, 1);
+    assert.match(stderr, /Did you mean `decoy-tripwire lockdown on`\?/);
+  });
+
+  it("leaves the upstream command line after `--` alone", async () => {
+    // --anything-at-all belongs to the wrapped server, not to us.
+    const { stdout, stderr, exitCode } = await run(["proxy", "--", "node", "-e", "0", "--upstream-only-flag"]);
+    assert.ok(!/unknown flag/.test(stderr), stderr);
+  });
+});
+
 // ─── Non-TTY behavior ───
 
 describe("non-tty behavior", () => {
@@ -220,7 +275,7 @@ describe("non-tty behavior", () => {
     const { stderr, exitCode } = await run(["init"]);
     // In exec(), stdin is not a TTY, so it should error
     assert.equal(exitCode, 1);
-    assert.match(stderr, /interactive input|--email/i);
+    assert.match(stderr, /interactive terminal|--email/i);
   });
 });
 
@@ -258,7 +313,7 @@ describe("init token resolution", () => {
       );
       assert.equal(exitCode, 1, "should exit 1 when signup returned no token and stdin isn't a TTY");
       // Falls through to browser flow, which exits because exec() has no TTY.
-      assert.match(stderr, /Auto-signup didn't return a token|interactive input/i);
+      assert.match(stderr, /Auto-signup didn't return a token|interactive terminal/i);
       const claudeConfig = join(tmpHome, "Library", "Application Support", "Claude", "claude_desktop_config.json");
       assert.ok(!existsSync(claudeConfig), "must not write Claude config when token isn't resolved");
     } finally {
@@ -276,7 +331,7 @@ describe("init token resolution", () => {
         { env: { HOME: tmpHome } },
       );
       assert.equal(exitCode, 1, "non-TTY init should exit 1");
-      assert.match(stderr, /interactive input|Sign in to Decoy/i, "should mention browser flow or non-TTY");
+      assert.match(stderr, /interactive terminal|Sign in to Decoy/i, "should mention browser flow or non-TTY");
       const claudeConfig = join(tmpHome, "Library", "Application Support", "Claude", "claude_desktop_config.json");
       assert.ok(!existsSync(claudeConfig), "must not write Claude config in non-TTY without --token");
     } finally {

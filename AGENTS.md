@@ -84,6 +84,18 @@ The `decoy_*` tools (signup, configure, status, upgrade, configure_alerts, billi
 
 Commands are defined as functions and wired in the `switch` statement at the bottom of `cli.mjs`. Follow the existing pattern: accept `flags`, support `--json` for machine output, use the color constants for terminal output.
 
+**Register every new flag in `COMMAND_FLAGS`** (just above the switch), keyed by
+the command that accepts it. A flag absent from every entry is rejected as a
+typo, so skipping this step means your new flag stops working; a flag present
+under a different command only warns. Shared helpers (`findUnknownFlag`,
+`nearest`, `resolveColor`, `canPrompt`, `fetchWithTimeout`, `onInterrupt`) live
+in `server/argv.mjs`.
+
+Exit codes: `0` success, `1` command failed (including usage errors),
+`130` interrupted. These are unchanged — don't add new ones without a reason
+that outweighs breaking a caller that branches on them. When driving this CLI non-interactively, pass `--no-input` so
+any path that would prompt fails fast instead of blocking on stdin.
+
 ## 5. Testing
 
 Tests use the built-in `node:test` runner — no external framework. Run with:
